@@ -31,8 +31,9 @@ class SubmissionError(Exception):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--event-path", type=Path, required=True)
-    parser.add_argument("--base-sha", required=True)
+    parser.add_argument("--mode", choices=("pull-request", "rebuild"), required=True)
+    parser.add_argument("--event-path", type=Path)
+    parser.add_argument("--base-sha")
     parser.add_argument("--valkyrie", type=Path, required=True)
     parser.add_argument("--package-name", required=True)
     return parser.parse_args()
@@ -315,12 +316,11 @@ def convert_icon(
         shutil.move(generated, destination)
 
 
-def process(args: argparse.Namespace) -> None:
-    if not PACKAGE_NAME_PATTERN.fullmatch(args.package_name):
-        raise SubmissionError("The configured Kotlin package name is invalid.")
-    if not args.valkyrie.is_file():
-        raise SubmissionError(f"Valkyrie executable not found at {args.valkyrie}.")
-
+def process_pull_request(args: argparse.Namespace) -> None:
+    if args.event_path is None or not args.base_sha:
+        raise SubmissionError(
+            "Pull-request mode requires --event-path and --base-sha."
+        )
     icons = parse_form(read_pr_body(args.event_path))
     changes = changed_paths(args.base_sha)
     if not validate_pr_changes(changes, icons):
@@ -354,6 +354,7 @@ def process(args: argparse.Namespace) -> None:
                 "Author": icon["author"],
                 "Filename": kotlin_filename,
                 "Source": svg_filename,
+                "Submission": icon["file"],
                 "Link": icon["link"],
             }
         )
@@ -362,6 +363,112 @@ def process(args: argparse.Namespace) -> None:
         json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def metadata_matches_submission(
+    entry: dict[str, Any], submission: Path
+) -> bool:
+    identifier = str(entry.get("Id", ""))
+    source = entry.get("Source")
+    original_submission = entry.get("Submission")
+    filename = entry.get("Filename")
+    return (
+        original_submission == submission.as_posix()
+        or source == submission.name
+        or (
+            isinstance(filename, str)
+            and Path(filename).name == filename
+            and Path(filename).stem == submission.stem
+        )
+        or (re.fullmatch(r"\d{4}", identifier) is not None
+            and submission.name == f"{identifier}.svg")
+    )
+
+
+def rebuild_existing_icons(args: argparse.Namespace) -> None:
+    metadata_path = Path("metadata.json")
+    metadata = read_metadata(metadata_path)
+    submissions = sorted(Path("submissions").glob("*.svg"))
+    identifiers = used_ids(metadata)
+    rebuilt_count = 0
+
+    for submission in submissions:
+        matches = [
+            entry
+            for entry in metadata
+            if metadata_matches_submission(entry, submission)
+        ]
+        if not matches:
+            print(
+                f"Skipping {submission.as_posix()}: no matching metadata entry."
+            )
+            continue
+        if len(matches) > 1:
+            raise SubmissionError(
+                f"{submission.as_posix()} matches multiple metadata entries."
+            )
+
+        entry = matches[0]
+        identifier = str(entry.get("Id", ""))
+        if not identifier:
+            identifier = next_id(identifiers)
+        elif re.fullmatch(r"\d{4}", identifier) is None:
+            raise SubmissionError(
+                f"{submission.as_posix()} metadata Id must be four digits."
+            )
+        expected_filename = f"Icon{identifier}.kt"
+        previous_filename = entry.get("Filename")
+        if not isinstance(previous_filename, str) or not previous_filename:
+            raise SubmissionError(
+                f"{submission.as_posix()} metadata requires a Filename."
+            )
+        if Path(previous_filename).name != previous_filename:
+            raise SubmissionError(
+                f"{submission.as_posix()} metadata Filename must not contain a path."
+            )
+
+        validate_svg(submission)
+        convert_icon(
+            valkyrie=args.valkyrie,
+            source=submission,
+            destination=Path("pack") / expected_filename,
+            identifier=identifier,
+            package_name=args.package_name,
+        )
+        previous_asset = Path("pack") / previous_filename
+        if previous_asset.name != expected_filename:
+            previous_asset.unlink(missing_ok=True)
+        archived_svg = Path("svg") / f"{identifier}.svg"
+        archived_svg.parent.mkdir(parents=True, exist_ok=True)
+        archived_svg.unlink(missing_ok=True)
+        shutil.move(submission, archived_svg)
+        entry["Id"] = identifier
+        entry["Filename"] = expected_filename
+        entry["Source"] = archived_svg.name
+        entry["Submission"] = submission.as_posix()
+        rebuilt_count += 1
+
+    if rebuilt_count == 0:
+        print("No submitted SVGs matched existing metadata; nothing to rebuild.")
+        return
+
+    metadata_path.write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(f"Successfully rebuilt {rebuilt_count} icon(s).")
+
+
+def process(args: argparse.Namespace) -> None:
+    if not PACKAGE_NAME_PATTERN.fullmatch(args.package_name):
+        raise SubmissionError("The configured Kotlin package name is invalid.")
+    if not args.valkyrie.is_file():
+        raise SubmissionError(f"Valkyrie executable not found at {args.valkyrie}.")
+
+    if args.mode == "pull-request":
+        process_pull_request(args)
+    else:
+        rebuild_existing_icons(args)
 
 
 def main() -> int:
