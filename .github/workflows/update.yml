@@ -14,10 +14,6 @@ jobs:
     permissions:
       contents: read
 
-    env:
-      ICON_PACKAGE_NAME: moe.rukamori.iconpack
-      ICON_RANDOM_DIGITS: 6
-
     steps:
       - name: Require branch and PAT
         env:
@@ -43,8 +39,7 @@ jobs:
         run: |
           python3 .github/scripts/process_icon_submission.py \
             --mode update \
-            --package-name "$ICON_PACKAGE_NAME" \
-            --random-digits "$ICON_RANDOM_DIGITS"
+            --random-digits 6
 
       - name: Commit updated icon pack
         env:
@@ -65,7 +60,7 @@ jobs:
 
           git config user.name "$pat_login"
           git config user.email "${pat_id}+${pat_login}@users.noreply.github.com"
-          git add metadata.json pack xml
-          git commit -m "build(icon-pack): update generated vectors"
+          git add metadata.json svg
+          git commit -m "build(icon-pack): update SVG metadata"
           git remote set-url origin "https://x-access-token:${ICON_PACK_PAT}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin "HEAD:${TARGET_BRANCH}"

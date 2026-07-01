@@ -5,43 +5,13 @@ import html
 import json
 import re
 import subprocess
-import tempfile
-import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 
-ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
 COMMENT_MARKER = "<!-- icon-pack-generated-previews -->"
-SUPPORTED_PATH_ATTRIBUTES = frozenset(
-    {
-        "fillAlpha",
-        "fillColor",
-        "fillType",
-        "name",
-        "pathData",
-        "strokeAlpha",
-        "strokeColor",
-        "strokeLineCap",
-        "strokeLineJoin",
-        "strokeMiterLimit",
-        "strokeWidth",
-    }
-)
-SUPPORTED_GROUP_ATTRIBUTES = frozenset(
-    {
-        "name",
-        "pivotX",
-        "pivotY",
-        "rotation",
-        "scaleX",
-        "scaleY",
-        "translateX",
-        "translateY",
-    }
-)
 IDENTIFIER_PATTERN = re.compile(r"\d{4}|\d{6}")
 
 
@@ -56,7 +26,7 @@ def parse_args() -> argparse.Namespace:
     generate = subparsers.add_parser("generate")
     generate.add_argument("--base-sha", required=True)
     generate.add_argument("--metadata", type=Path, required=True)
-    generate.add_argument("--xml-directory", type=Path, required=True)
+    generate.add_argument("--svg-directory", type=Path, required=True)
     generate.add_argument("--output-directory", type=Path, required=True)
     generate.add_argument("--manifest", type=Path, required=True)
     generate.add_argument("--renderer", type=Path, required=True)
@@ -130,150 +100,6 @@ def metadata_text(
     return value.strip()
 
 
-def android_attribute(element: ElementTree.Element, name: str) -> str | None:
-    return element.get(f"{{{ANDROID_NAMESPACE}}}{name}")
-
-
-def local_attributes(element: ElementTree.Element) -> set[str]:
-    return {
-        attribute.rsplit("}", maxsplit=1)[-1]
-        for attribute in element.attrib
-    }
-
-
-def svg_color(value: str, alpha: float) -> tuple[str, float]:
-    if not re.fullmatch(r"#[0-9A-Fa-f]{8}", value):
-        raise PreviewError(f'Unsupported Android vector color "{value}".')
-    color_alpha = int(value[1:3], 16) / 255
-    return f"#{value[3:]}", color_alpha * alpha
-
-
-def float_attribute(
-    element: ElementTree.Element,
-    name: str,
-    default: float,
-) -> float:
-    value = android_attribute(element, name)
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except ValueError as error:
-        raise PreviewError(
-            f'Invalid Android vector {name} value "{value}".'
-        ) from error
-
-
-def render_path(element: ElementTree.Element) -> str:
-    unsupported = local_attributes(element) - SUPPORTED_PATH_ATTRIBUTES
-    if unsupported:
-        raise PreviewError(
-            "Unsupported Android path attributes: "
-            + ", ".join(sorted(unsupported))
-        )
-    path_data = android_attribute(element, "pathData")
-    if not path_data:
-        raise PreviewError("Android vector path requires pathData.")
-
-    attributes = [f'd="{html.escape(path_data, quote=True)}"']
-    fill_color = android_attribute(element, "fillColor")
-    if fill_color is None:
-        attributes.append('fill="none"')
-    else:
-        color, opacity = svg_color(
-            fill_color,
-            float_attribute(element, "fillAlpha", 1.0),
-        )
-        attributes.append(f'fill="{color}"')
-        if opacity < 1:
-            attributes.append(f'fill-opacity="{opacity:.6g}"')
-
-    fill_type = android_attribute(element, "fillType")
-    if fill_type == "evenOdd":
-        attributes.append('fill-rule="evenodd"')
-    elif fill_type not in {None, "nonZero"}:
-        raise PreviewError(f'Unsupported Android fillType "{fill_type}".')
-
-    stroke_color = android_attribute(element, "strokeColor")
-    if stroke_color is not None:
-        color, opacity = svg_color(
-            stroke_color,
-            float_attribute(element, "strokeAlpha", 1.0),
-        )
-        attributes.append(f'stroke="{color}"')
-        attributes.append(
-            f'stroke-width="{float_attribute(element, "strokeWidth", 0.0):g}"'
-        )
-        if opacity < 1:
-            attributes.append(f'stroke-opacity="{opacity:.6g}"')
-        line_cap = android_attribute(element, "strokeLineCap")
-        if line_cap is not None:
-            attributes.append(f'stroke-linecap="{html.escape(line_cap)}"')
-        line_join = android_attribute(element, "strokeLineJoin")
-        if line_join is not None:
-            attributes.append(f'stroke-linejoin="{html.escape(line_join)}"')
-        miter_limit = android_attribute(element, "strokeMiterLimit")
-        if miter_limit is not None:
-            attributes.append(
-                f'stroke-miterlimit="{html.escape(miter_limit)}"'
-            )
-
-    return "<path " + " ".join(attributes) + "/>"
-
-
-def render_group(element: ElementTree.Element) -> str:
-    unsupported = local_attributes(element) - SUPPORTED_GROUP_ATTRIBUTES
-    if unsupported:
-        raise PreviewError(
-            "Unsupported Android group attributes: "
-            + ", ".join(sorted(unsupported))
-        )
-    pivot_x = float_attribute(element, "pivotX", 0.0)
-    pivot_y = float_attribute(element, "pivotY", 0.0)
-    translate_x = float_attribute(element, "translateX", 0.0)
-    translate_y = float_attribute(element, "translateY", 0.0)
-    rotation = float_attribute(element, "rotation", 0.0)
-    scale_x = float_attribute(element, "scaleX", 1.0)
-    scale_y = float_attribute(element, "scaleY", 1.0)
-    transform = (
-        f"translate({pivot_x + translate_x:g} {pivot_y + translate_y:g}) "
-        f"rotate({rotation:g}) scale({scale_x:g} {scale_y:g}) "
-        f"translate({-pivot_x:g} {-pivot_y:g})"
-    )
-    children = "".join(render_element(child) for child in element)
-    return f'<g transform="{transform}">{children}</g>'
-
-
-def render_element(element: ElementTree.Element) -> str:
-    local_name = element.tag.rsplit("}", maxsplit=1)[-1]
-    if local_name == "path":
-        return render_path(element)
-    if local_name == "group":
-        return render_group(element)
-    raise PreviewError(f'Unsupported Android vector element "{local_name}".')
-
-
-def vector_to_svg(path: Path) -> str:
-    try:
-        root = ElementTree.parse(path).getroot()
-    except (ElementTree.ParseError, OSError) as error:
-        raise PreviewError(f"Cannot read {path.as_posix()}: {error}") from error
-    if root.tag != "vector":
-        raise PreviewError(f"{path.as_posix()} is not an Android vector.")
-    viewport_width = android_attribute(root, "viewportWidth")
-    viewport_height = android_attribute(root, "viewportHeight")
-    if viewport_width is None or viewport_height is None:
-        raise PreviewError(
-            f"{path.as_posix()} requires viewportWidth and viewportHeight."
-        )
-    children = "".join(render_element(child) for child in root)
-    return (
-        '<svg xmlns="http://www.w3.org/2000/svg" '
-        f'viewBox="0 0 {html.escape(viewport_width)} '
-        f'{html.escape(viewport_height)}">{children}</svg>'
-    )
-
-
 def generate_previews(args: argparse.Namespace) -> None:
     if not args.renderer.is_file():
         raise PreviewError(f"Renderer not found at {args.renderer}.")
@@ -294,32 +120,33 @@ def generate_previews(args: argparse.Namespace) -> None:
         identifier = entry_identifier(entry)
         name = metadata_text(entry, "Name", identifier)
         source_filename = metadata_text(entry, "Source", identifier)
-        if Path(source_filename).name != source_filename:
+        if (
+            Path(source_filename).name != source_filename
+            or Path(source_filename).suffix.lower() != ".svg"
+        ):
             raise PreviewError(
-                f'Metadata icon "{identifier}" has an invalid Source.'
+                f'Metadata icon "{identifier}" has an invalid SVG Source.'
             )
-        vector_path = args.xml_directory / source_filename
+        source_path = args.svg_directory / source_filename
+        if not source_path.is_file() or source_path.is_symlink():
+            raise PreviewError(
+                f"SVG source not found at {source_path.as_posix()}."
+            )
         preview_path = args.output_directory / f"{identifier}.png"
-        svg = vector_to_svg(vector_path)
-        with tempfile.TemporaryDirectory(
-            prefix="icon-preview-"
-        ) as temporary_directory:
-            svg_path = Path(temporary_directory) / f"{identifier}.svg"
-            svg_path.write_text(svg, encoding="utf-8")
-            subprocess.run(
-                [
-                    str(args.renderer),
-                    "--width",
-                    "256",
-                    "--height",
-                    "256",
-                    "--keep-aspect-ratio",
-                    "--output",
-                    str(preview_path),
-                    str(svg_path),
-                ],
-                check=True,
-            )
+        subprocess.run(
+            [
+                str(args.renderer),
+                "--width",
+                "256",
+                "--height",
+                "256",
+                "--keep-aspect-ratio",
+                "--output",
+                str(preview_path),
+                str(source_path),
+            ],
+            check=True,
+        )
         manifest.append(
             {
                 "id": identifier,
