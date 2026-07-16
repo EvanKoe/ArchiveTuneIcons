@@ -3,24 +3,12 @@
 <rect width="512" height="512" fill="#1B1B1D"/>
 <circle cx="86.5214" cy="445.535" r="307.053" fill="#39393B"/>
 <path d="M390.928 240.104C407.172 233.375 425.424 233.375 441.668 240.104L584.408 299.229C600.652 305.957 613.558 318.863 620.286 335.107L679.411 477.847C686.14 494.091 686.14 512.343 679.411 528.587L620.286 671.327C613.558 687.571 600.652 700.477 584.408 707.206L441.668 766.331C425.424 773.059 407.172 773.059 390.928 766.331L248.188 707.206C231.944 700.477 219.038 687.571 212.309 671.327L153.184 528.587C146.456 512.343 146.456 494.091 153.184 477.847L212.309 335.107C219.038 318.863 231.944 305.957 248.188 299.229L390.928 240.104Z" fill="#354055"/>
-<g filter="url(#filter0_d_2404_117)">
 <path d="M227.098 191.735C227.245 190.891 228.023 190.308 228.874 190.402L282.461 196.336C283.361 196.435 284.005 197.249 283.882 198.147C282.457 208.574 274.24 266.724 263.12 304.714C252.263 341.803 231.446 391.732 227.883 400.192C227.576 400.922 226.793 401.296 226.024 401.108L169.975 387.403C168.991 387.162 168.452 386.118 168.865 385.193C173.201 375.477 194.45 327.21 205.096 290.826C216.188 252.916 225.451 201.152 227.098 191.735Z" fill="#BBC7E1"/>
 <rect x="131.344" y="124.129" width="264.361" height="46.9937" transform="rotate(-3.94126 131.344 124.129)" fill="#BBC7E1"/>
 <rect x="306.684" y="237.477" width="134.299" height="46.9937" transform="rotate(-58.8611 306.684 237.477)" fill="#BBC7E1"/>
 <rect x="366.031" y="120.732" width="32.5715" height="46.9937" transform="rotate(-26.9307 366.031 120.732)" fill="#BBC7E1"/>
 </g>
-</g>
 <defs>
-<filter id="filter0_d_2404_117" x="128.918" y="105.025" width="294.343" height="304.529" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-<feFlood flood-opacity="0" result="BackgroundImageFix"/>
-<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
-<feOffset dx="2.23953" dy="3.73255"/>
-<feGaussianBlur stdDeviation="2.33284"/>
-<feComposite in2="hardAlpha" operator="out"/>
-<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.25 0"/>
-<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_2404_117"/>
-<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_2404_117" result="shape"/>
-</filter>
 <clipPath id="clip0_2404_117">
 <rect width="512" height="512" fill="white"/>
 </clipPath>
